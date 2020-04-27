@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF8"/>
+    <title>Movie: Results</title>
+</head>
+<body>
+    <h1>Here are your results!</h1>
+
+    <table>
+        <tr>
+            <th>Movie Name</th>
+            <th>{{sort}}</th>
+        </tr>
+        {% for row in results %}
+        <tr>
+            <td>{{row[0]}}</td>
+            <td>{{row[1]}}</td>
+        </tr>
+        {% endfor %}
+
+    </table>
+
+
+ 
+</body>
+</html>

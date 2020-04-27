@@ -3,6 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import sqlite3
+import plotly.graph_objects as go
 
 from flask import Flask, render_template, request
 app = Flask(__name__)
@@ -54,10 +55,10 @@ def make_request_with_cache_omdb(baseurl, params={}):
 def make_request_with_cache_imdb(baseurl, params={}):
     request_key = construct_unique_key(baseurl, params)
     if request_key in CACHE_DICT.keys():
-        print("Using Cache")
+        #print("Using Cache")
         return CACHE_DICT[request_key]
     else:
-        print("Fetching")
+        #print("Fetching")
         CACHE_DICT[request_key] = make_request(baseurl, params)
         save_cache(CACHE_DICT)
         return CACHE_DICT[request_key]
@@ -97,13 +98,14 @@ class OMDb:
     plot: string
         description of the movie.tv show's plot
     '''
-    def __init__(self, title, year, rated, genre, plot, imdb_id):
+    def __init__(self, title, year, rated, genre, plot, imdb_id, poster):
         self.title = title
         self.year = year
         self.rated = rated
         self. genre = genre
         self.plot = plot
         self.imdb_id = imdb_id
+        self.poster = poster
 
     def info(self):
         return self.title + " (" + self.year +")" + " (" + self.genre +")" + " ["+self.rated+"] " + ": " + self.plot
@@ -146,7 +148,11 @@ def get_omdb_instance(baseurl, params):
         imdb_id =response['imdbID']
     except:
         imdb_id = "No ID"
-    omdb_instance = OMDb(title, year, rated, genre, plot, imdb_id)
+    try:
+        poster = response["Poster"]
+    except:
+        poster = "No poster to display"
+    omdb_instance = OMDb(title, year, rated, genre, plot, imdb_id, poster)
 
     return  omdb_instance
 
@@ -232,7 +238,7 @@ def get_imdb_instance(IMDb_ID):
         reviews = "No Reviews"
     try:
         baseurl = 'https://www.imdb.com/title/'+IMDb_ID+'/trivia?ref_=tt_trv_trv'
-        response2 = make_request_with_cache(baseurl)
+        response2 = make_request_with_cache_imdb(baseurl)
         soup2 = BeautifulSoup(response2, 'html.parser')
 
         trivia = []
@@ -253,8 +259,11 @@ def get_imdb_instance(IMDb_ID):
 def print_trivia(imdb_instance):
     '''
     '''
+    list = []
     for i in range(len(imdb_instance.trivia)):
-        print(f"[{i+1}] {imdb_instance.trivia[i]}")
+        fact = f"[{i+1}] {imdb_instance.trivia[i]}"
+        list.append(fact)
+    return list
 
 def return_director(imdb_instance):
     director = imdb_instance.director.split()
@@ -275,8 +284,8 @@ def get_directors():
     #director_dict = get_directors()
     dict = {}
     for director in result:
-        if (director[1] + " " + director[2]) not in dict.keys():
-            dict[director[1] + " " + director[2]] = director[0]
+        if (director[2] + " " + director[1]) not in dict.keys():
+            dict[director[2] + " " + director[1]] = director[0]
     return dict
 
 director_dict = get_directors()
@@ -290,9 +299,9 @@ def create_db():
     '''
     create_director = '''
         CREATE TABLE IF NOT EXISTS "Director" (
-            "Id"  INTEGER PRIMARY KEY AUTOINCREMENT UNIQUE,
-            "LastName"  TEXT NOT NULL,
-            "FirstName" TEXT NOT NULL
+            Id  INTEGER PRIMARY KEY AUTOINCREMENT UNIQUE,
+            LastName  TEXT NOT NULL,
+            FirstName TEXT NOT NULL
         )
     '''
     drop_movie = '''
@@ -300,11 +309,12 @@ def create_db():
     '''
     create_movie = '''
         CREATE TABLE IF NOT EXISTS "Movie" (
-            'Id' INTEGER PRIMARY KEY AUTOINCREMENT UNIQUE,
-            'Title' TEXT NOT NULL,
-            'Year' INTEGER NOT NULL,
-            'Rating' INTEGER,
-            'DirectorId' INTEGER
+            Id INTEGER PRIMARY KEY AUTOINCREMENT UNIQUE,
+            Title TEXT NOT NULL,
+            Year INTEGER NOT NULL,
+            Rating INTEGER,
+            DirectorId INTEGER,
+            FOREIGN KEY (DirectorId) REFERENCES Director(Id)
         )
     '''
     cur.execute(drop_director)
@@ -332,7 +342,7 @@ def load_director():
             try:
                 director_split = (results)["Director"].split()
                 cur.execute(insert_director,
-                [ director_split[0], director_split[1] ]
+                [director_split[1].replace(",", ""), director_split[0]]
                 )
             except KeyError:
                 pass
@@ -351,42 +361,102 @@ def load_movie():
 
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
-    #director_dict = get_directors()
+    director_dict = get_directors()
     for url, results in cache_data.items():
         if 'omdb' in url:
             try:
-                cur.execute(insert_movie,
-                [ (results)["Title"], (results)["Year"], results["imdbRating"], director_dict[results["Director"]]])
-                #(results)["Director"].split()[0], (results)["Director"].split()[1]]
-                print(results['Director'])
+                cur.execute(insert_movie, [results["Title"], results["Year"], results["imdbRating"], director_dict[results["Director"].replace(",", "")]])
+                print(results["Title"], director_dict[results["Director"]], results["Director"])
             except KeyError:
                 pass
     conn.commit()
     conn.close()
 
 #Flask
+def get_results(sort_by, sort_order):
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+
+    if sort_by == 'rating':
+        sort_column = 'Rating'
+    else:
+        sort_column = 'Year'
+
+    q = f'''
+        SELECT Title, {sort_column}
+        FROM Movie
+        JOIN Director
+            ON DirectorId=Director.Id
+        ORDER BY {sort_column} {sort_order}
+        LIMIT 10
+    '''
+    print(q)
+    results = cur.execute(q).fetchall()
+    conn.close()
+    print(results)
+    return results
+
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/handle_form', methods=['POST', 'GET'])
+@app.route('/graph')
+def graph():
+    return render_template('graph.html')
+
+@app.route('/results', methods=['POST'])
+def bars():
+    sort_by = request.form['sort']
+    sort_order = request.form['dir']
+    results = get_results(sort_by, sort_order)
+
+    plot_results = request.form.get('plot', False)
+    if (plot_results):
+        x_vals = [r[0] for r in results]
+        y_vals = [r[1] for r in results]
+        movie_data = go.Bar(
+            x=x_vals,
+            y=y_vals
+        )
+        fig = go.Figure(data=movie_data)
+        div = fig.to_html(full_html=False)
+        return render_template("plot.html", plot_div=div)
+    else:
+        return render_template('results.html',
+            sort=sort_by, results=results)
+
+@app.route('/handle_form', methods=['POST'])
 def handle_the_form():
+
     search = request.form["movie"]
     baseurl = 'http://www.omdbapi.com/?'
     params = {"apikey": omdb_secret.API_KEY, "t": search}
 
-    return baseurl, params
+    omdb_instance = get_omdb_instance(baseurl, params)
+    imdb_instance = get_imdb_instance(omdb_instance.imdb_id)
+
+    title = omdb_instance.title
+    director = imdb_instance.director
+    year = omdb_instance.year
+    rated = omdb_instance.rated
+    genre = omdb_instance.genre
+    plot = omdb_instance.plot
+    rating = imdb_instance.rating
+    review = imdb_instance.reviews
+    trivia = imdb_instance.trivia
+    poster = omdb_instance.poster
+
+    return render_template('search.html',
+        title=title, director=director, year=year,
+        rated=rated, genre=genre, plot=plot, rating=rating,
+        review=review, trivia=trivia, poster=poster)
 
 
 if __name__ == '__main__':
     app.run(debug=True)
-    baseurl = 'http://www.omdbapi.com/?'
-    params = {"apikey": omdb_secret.API_KEY, "t": "frozen"}
-    print(((get_imdb_instance(get_omdb_instance(baseurl, params).imdb_id))))
-
-
     create_db()
     load_director()
     load_movie()
+
 
 

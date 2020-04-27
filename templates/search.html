@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf8"/>
+    <title>HTML Form Response</title>
+</head>
+<body>
+
+    <h1>These are your movie search results:</h1>
+        <img src="{{poster}}"></img>
+
+    <p><h2>The movie you searched for is {{title}}!</h2></p>
+    <p> Director: {{director}} ({{year}}) [{{rated}}] {{genre}}</p>
+
+    <p><h4>Summary</h4></p>
+    <p>{{plot}}</p>
+
+    <p><h4>Movie rating:</h4> {{rating}}/10</p>
+
+    <p><h4>User Review:</h4></p>
+    <p>{{review}}</p>
+
+    <p><h4>Fun facts</h4></p>
+    <ol>
+        {% for fact in trivia %}
+            <li> {{fact}} </li>
+        {% endfor %}
+        </ol>
+</body>
+</html>
