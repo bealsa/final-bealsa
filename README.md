@@ -1,5 +1,7 @@
 # final-bealsa
 
+Special requirements/packages: API key for OMDb, Plotly, and Flask
+
 Records are retrieved from IMDb and OMDb and 20 records are stored in a sql database file. 
 
 When the python file is executed, the Flask technology creates a link for the user to open in the browser. 
